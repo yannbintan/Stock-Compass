@@ -1,116 +1,167 @@
 # Stock Compass
 
-An explainable stock decision-support and learning dashboard by **Tan Yann Bin**.
+An explainable stock research and decision-support dashboard by **Tan Yann Bin**.
 
-Stock Compass brings market information, transparent technical rules, news context and portfolio tools into one browser application. It helps users inspect a setup and plan risk; it does not place broker orders or promise profitable trades.
+Stock Compass combines market information, technical indicators, company fundamentals, news and portfolio tools in one application. It explains the rules behind each setup and helps users plan risk. It does not execute broker orders.
 
-> **Standalone GitHub edition.** This repository is a new implementation based on the documented Stock Compass requirements. It is not a recovered copy of the earlier hosted application's source. Its code, configuration and tests are maintained here independently.
+![Stock Compass project banner](public/og.png)
 
-## Features
+**Status: personal beta and portfolio project.** A setup score is not a probability of success. Public feeds can be delayed or unavailable, and historical results are hypothetical.
 
-- A searchable market board with 20 starter symbols and custom U.S. tickers.
-- Quote timestamps, data-source labels, market-session information and stale-data protection.
-- Regular-session, pre-market and after-hours observations when the upstream source supplies them. Overnight coverage is explicitly unavailable in this edition.
-- Interactive price/volume charts with 1D, 5D, 1M, 3M, 6M and 1Y views.
-- Explainable short-term setup scores, RSI, moving averages, recent support and resistance, and volume confirmation.
-- Separate new-buyer and holder guidance; scores are not success probabilities.
-- Long-term research with available company metrics, without fabricated fundamental ratings.
-- A local transaction journal with buys, partial sales, fees, dividends, average cost and realised/unrealised profit.
-- Stops, two profit targets, trailing-stop planning and an estimated USD/MYR position-size calculator.
-- Device-saved watchlists and one-time price/setup alerts while the dashboard is open.
-- A historical backtest with next-bar entries, trading costs, conservative OHLC exit handling, a time-ordered holdout and a mark-to-market equity curve.
-- News deduplication, direct/indirect relevance labels and explainable keyword-based sentiment.
-- Optional server-side Alpaca quote and Finnhub fundamentals connections, with a public-data fallback.
-- JSON backup/import and deletion controls for browser-saved portfolio data.
+## What is included
 
-## Technology
-
-| Layer | Technology |
+| Area | Features |
 | --- | --- |
-| Interface | React, TypeScript and CSS |
-| Build | Vite |
-| API | TypeScript on Cloudflare Workers |
-| Persistence | Browser localStorage; no shared portfolio database |
-| Tests | Node.js test runner and TypeScript checks |
-| Automation | GitHub Actions |
+| Market dashboard | 20 starter symbols, custom U.S. ticker entry, searchable board and browser-saved watchlist |
+| Quotes | Regular, pre-market and after-hours observations when supplied; timestamps, source and stale-data status |
+| Charts and details | 1D, 5D, 1M, 3M, 6M and 1Y line charts; open, daily range, previous close, volume, average volume and 52-week range |
+| Decision support | Short-term trend, RSI and support rules; separate potential-buyer and holder explanations |
+| Fundamentals | Available valuation, growth, debt, cash flow and earnings fields, with missing data identified |
+| Holdings | Shares, average purchase price, stop and unrealised profit/loss |
+| Transaction journal | Buys, partial sales, fees, dividends, average cost and realised profit/loss |
+| Exit planning | Stop, 1R and 2R targets, trailing-stop reference and estimated USD/MYR position sizing |
+| Historical research | Daily-bar strategy backtest, later-period results, trade count, win rate, average return, profit factor and closed-trade drawdown |
+| News | Dated headlines, duplicate filtering, direct/indirect relevance and keyword-based impact explanations |
+| Alerts | One-time price threshold alerts and optional browser notifications while the page is open |
+| Feed health | Real sample probes, bounded requests, caching, fallbacks and stale-signal blocking |
 
-## Run locally
+Overnight quotes are **not implemented**. Bid/ask requires a usable Alpaca quote and appropriate account entitlement. Adding API keys does not guarantee the same coverage or prices as a broker.
 
-Install **Node.js 22.18 or later** and Git. Then run:
+## Run on your computer
+
+Install [Node.js](https://nodejs.org/) **24 LTS** (minimum supported version: 22.18) and [Git](https://git-scm.com/). Open a terminal or Windows PowerShell:
 
 ```bash
 git clone https://github.com/yannbintan/Stock-Compass.git
 cd Stock-Compass
-npm install
-npm run build
+npm ci
 npm run dev
 ```
 
-Open **http://localhost:8787**. This command runs the Worker API and the built dashboard together. After changing frontend files, run `npm run build` again. For frontend hot reload, keep `npm run dev` running and run `npm run dev:ui` in a second terminal; open the Vite address it prints.
+Open **http://localhost:3000**. Keep the terminal running; press `Ctrl+C` to stop.
 
-Once `package-lock.json` is available, use `npm ci` for a reproducible installation. No paid API key is needed to try the public fallback, but an internet connection is required and upstream requests may be blocked or rate-limited.
+No account, database or paid API key is needed to try the public fallbacks. Internet access is required for current market data. Each person can clone the project and run their own local copy.
 
-## Optional data-provider configuration
+The repository contains a committed lockfile, so use `npm ci` for reproducible installs. The npm commands work without Bash-specific environment assignments or shell scripts.
 
-Copy `.dev.vars.example` to `.dev.vars` and supply only the providers you use. `.dev.vars` is ignored by Git.
-
-| Variable | Purpose |
-| --- | --- |
-| `ALPACA_API_KEY` | Alpaca market-data key |
-| `ALPACA_API_SECRET` | Alpaca market-data secret |
-| `ALPACA_FEED` | `iex` by default, or `sip` if your account is entitled |
-| `FINNHUB_API_KEY` | Company fundamentals and earnings calendar |
-
-Keys stay in the Worker. Never put them in `VITE_` variables, browser code, screenshots or commits. Configuring a key does not establish permission to redistribute market data publicly. Check the provider's current terms and account entitlements before a public launch.
-
-## Deploy without a custom domain
-
-The included Worker serves both the API and built frontend. In your own Cloudflare account:
+### Preview a production build
 
 ```bash
 npm run build
+npm start
+```
+
+Open **http://localhost:3000** again. Stop the development server first so the port is free.
+
+## Optional provider keys
+
+Copy `.env.example` to `.env.local` in the project root, then fill in your own values. You can copy it with your file manager, or in PowerShell:
+
+```powershell
+Copy-Item .env.example .env.local
+```
+
+On macOS/Linux:
+
+```bash
+cp .env.example .env.local
+```
+
+| Variable | Purpose |
+| --- | --- |
+| `ALPACA_API_KEY` | Optional server-side Alpaca API key |
+| `ALPACA_API_SECRET` | Corresponding Alpaca secret |
+| `ALPACA_DATA_FEED` | Defaults to `iex`; change only to a feed supported by the code and your account |
+| `FINNHUB_API_KEY` | Optional fundamentals and earnings source |
+
+Restart the server after changing these values. Local Node development/preview loads `.env.local`; `.dev.vars.example` is also included for developers using Wrangler or the Worker emulator directly. `.dev.vars` and local `.env` files are ignored by Git. Never put credentials in browser code or variables prefixed with `VITE_` or `NEXT_PUBLIC_`.
+
+Without keys, the app attempts public Yahoo/Stooq price feeds, Yahoo financial statements, and Google News/Yahoo RSS. Missing, stale or unsupported fields remain labelled. A failed public feed is not evidence that the market has no activity.
+
+## Publish with your own Cloudflare account
+
+The included configuration runs the dashboard and API together on Cloudflare Workers. It does not contain the original host's project identity or require its domain.
+
+```bash
 npx wrangler login
 npm run deploy
 ```
 
-Wrangler prints the actual `workers.dev` address after deployment. No custom `.com` is required. Cloudflare's free plan has CPU, request and size limits; confirm the application fits those limits before sharing widely. The repository does not claim that an independent public demo has already been deployed.
+Wrangler prints the deployed address. Use that actual address in your repository description once deployment succeeds. An independent public demo has not been provisioned by this source upload.
 
-For production secrets, use `npx wrangler secret put ALPACA_API_KEY` and the corresponding command for each remaining secret. Set the non-secret feed selection in `wrangler.jsonc` if required. See [Cloudflare routing](https://developers.cloudflare.com/workers/configuration/routing/workers-dev/) and [plan limits](https://developers.cloudflare.com/workers/platform/limits/).
+For provider secrets on the deployed Worker:
 
-GitHub Pages alone cannot run this project's market-data API routes.
+```bash
+npx wrangler secret put ALPACA_API_KEY
+npx wrangler secret put ALPACA_API_SECRET
+npx wrangler secret put FINNHUB_API_KEY
+```
+
+Add only the secrets you use. Non-secret settings belong in `wrangler.jsonc`. Review your provider's display/redistribution permissions and hosting limits before inviting public users. There is no global per-user rate limiter or account system in this beta. GitHub Pages cannot run the server-side API routes.
+
+The project retains its pinned [Vinext](https://github.com/cloudflare/vinext) and Cloudflare Vite integration. See [Cloudflare Vite documentation](https://developers.cloudflare.com/workers/vite-plugin/) for hosting configuration. `npm run check:worker` prepares a deployment package without publishing it.
 
 ## Verification
 
 ```bash
-npm test
 npm run typecheck
-npm run build
+npm test
 npm run check:worker
 ```
 
-The CI workflow runs these checks. Its initial dependency install can commit a generated lockfile; subsequent runs use `npm ci`. Check the latest Actions run for the actual verification status.
+`npm test` builds the production application and runs the Node.js tests. Coverage includes transaction accounting, exit targets, one-time alerts, holiday/session freshness, provider failure handling, news fallbacks, financial statement parsing, HTML rendering and invalid symbols. Provider responses in regression tests are controlled fixtures; passing tests do not guarantee that external feeds are currently available.
+
+The included [GitHub Actions workflow](.github/workflows/ci.yml) runs these checks after pushes and pull requests. It does not publish the website or require provider credentials.
+
+Other commands:
+
+| Command | Purpose |
+| --- | --- |
+| `npm run dev` | Local development with hot reload |
+| `npm run build` | Build the client and Worker |
+| `npm start` | Preview the built application locally |
+| `npm run test:unit` | Run tests against an existing build |
+| `npm run lint` | Inspect code style and framework lint findings |
+| `npm run deploy` | Build and deploy to your authenticated Cloudflare account |
 
 ## Project structure
 
-```text
-src/                 React dashboard and browser state
-shared/              Indicators, decisions, portfolio and backtest logic
-worker/              Data providers and API routing
-tests/               Financial calculations and API safeguards
-docs/                Methodology and data-source notes
-wrangler.jsonc       Independent Cloudflare deployment configuration
-```
+| Path | Contents |
+| --- | --- |
+| `app/page.tsx` | Dashboard, signals, forms and browser state |
+| `app/data.ts` | Starter symbols and built-in reference snapshots |
+| `app/lib/` | Portfolio accounting, alerts and quote freshness |
+| `app/api/market/` | Daily and intraday data providers |
+| `app/api/fundamentals/` | Company metrics and dated statements |
+| `app/api/backtest/` | Historical strategy simulation |
+| `app/api/news/` | News retrieval and classification |
+| `app/api/health/` | Sample service-health probes |
+| `app/globals.css` | Responsive dashboard styles |
+| `public/` | Project banner and static icons |
+| `worker/` | Cloudflare runtime entry |
+| `tests/` | Calculation, rendering and feed regression tests |
+| `docs/` | Methodology and data-source limitations |
+| `wrangler.jsonc` | Independent Worker deployment settings |
 
-## Data, privacy and limitations
+## Understand the results
 
-Portfolio entries and watchlists are saved in the current browser, not to an account. Clearing site data removes them. Moving to another domain does not transfer localStorage: export your backup first. Quote/news requests transmit the requested ticker and normal connection metadata to the application host and relevant providers; provider requests are made server-side. Browser notifications require permission and work only while this page is open.
+- **74/100 is a rule-based score, not a 74% chance of profit.** The live setup rules and historical entry strategy are related but not identical.
+- Long-term scores still start from predefined assessments for starter symbols and adjust using available metrics. They are not a fully independent valuation model.
+- The backtest's later 30% period is a chronological reporting subset, not proof of out-of-sample predictive accuracy. Drawdown is measured at trade closures. Daily-bar execution, overnight gaps, dividends and other modelling limits are described in [Methodology](docs/METHODOLOGY.md).
+- Alerts require the dashboard to remain open and usable quote data to be loaded. They are price alerts, not a background email/push or signal-alert service.
+- The USD/MYR conversion uses the rate entered by the user. It is not a live FX feed.
+- These tests and safeguards support research, not automatic trading. Confirm current prices and intended orders in your broker.
 
-Public Yahoo/Stooq endpoints are unofficial application dependencies and may change, fail or provide delayed information. Alpaca feed coverage depends on entitlement. News labels are simple heuristics, not verified forecasts. Historical results are hypothetical; this is a price-based test, not a total-return model. Historical scores are not calibrated probabilities. The included request limiter is a best-effort per-instance safeguard, not a globally enforced abuse-control service.
+## Local data and privacy
 
-Read [Methodology](docs/METHODOLOGY.md) and [Data sources](docs/DATA_SOURCES.md) for the exact assumptions. Confirm prices and any intended order in your broker before acting.
+Holdings, journals, watchlists and alert settings remain in `localStorage` in that browser and origin. They are not uploaded as a shared portfolio. Clearing browser data can delete them, and opening a different domain, port or browser does not transfer them. There are no accounts, cloud synchronisation or built-in backup/import controls in this release.
 
-## Author
+Stock-data requests send requested tickers and normal connection metadata to the application host and relevant providers. Do not publish API keys or personal transaction exports in this repository. See [Data sources](docs/DATA_SOURCES.md).
+
+## Source and author
+
+This is a portable export of the **original Stock Compass version 9** source, recovered from commit `6c1024da512a81100d05d5c8770fc50126d9aae4`. It replaces the earlier README describing a proposed standalone rewrite. The dashboard and data routes come from that original project; the export adapts build/deployment configuration and documentation for GitHub and localhost.
 
 **Tan Yann Bin** — System Analytics / Data Analytics, Sunway University.
 
-This portfolio project demonstrates API integration, financial-data processing, explainable rule design, frontend development and automated validation. No project licence has been assigned yet; dependency licences remain with their respective owners.
+This project demonstrates TypeScript/React development, API integration, financial-data processing, explainable rules and automated regression checks. No project licence has been selected; dependency licences remain with their respective owners.

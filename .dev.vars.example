@@ -1,0 +1,9 @@
+# Optional licensed market and news provider.
+# Leave blank to use the clearly labelled public fallback feeds.
+ALPACA_API_KEY=
+ALPACA_API_SECRET=
+ALPACA_DATA_FEED=iex
+
+# Optional fundamentals provider.
+# Leave blank to attempt the public fundamentals fallback.
+FINNHUB_API_KEY=
