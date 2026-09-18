@@ -136,6 +136,8 @@ h2 { margin-bottom: 0; font-size: 18px; letter-spacing: -.02em; }
 .table-score::before { content: ""; position: absolute; left: 0; width: 45px; height: 4px; border-radius: 99px; background: #26313f; }
 .table-score > span { position: absolute; z-index: 1; left: 0; max-width: 45px; height: 4px; border-radius: 99px; background: linear-gradient(90deg, var(--warning), var(--positive)); }
 .table-score strong { min-width: 20px; color: var(--muted-strong); font-size: 9px; }
+.pause-reason { display: block; max-width: 15rem; margin-top: .35rem; color: var(--muted-strong); font-size: .875rem; line-height: 1.35; white-space: normal; }
+.paused-score { color: var(--muted); font-size: 1rem; }
 .empty-state { padding: 24px; color: var(--muted); font-size: 10px; text-align: center; }
 
 .dashboard-grid { display: grid; grid-template-columns: minmax(0, 1.75fr) minmax(310px, .85fr); gap: 18px; margin-bottom: 18px; }

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { stocks, type Analysis, type Mode, type NewsItem, type Stock, type Tone } from "./data";
 import { calculatePositions, createExitPlan, type JournalTransaction, type TransactionType } from "./lib/portfolio";
 import { evaluatePriceAlerts, type PriceAlert } from "./lib/alerts";
+import { latestQuote, quoteStatus, signalStatus } from "./lib/signal-status";
 
 type MarketQuote = {
   symbol: string;
@@ -18,6 +19,8 @@ type MarketQuote = {
   week52High?: number;
   week52Low?: number;
   history: number[];
+  historyBars?: number;
+  historyUpdated?: string;
   historyByPeriod?: Partial<Record<"1M" | "3M" | "6M" | "1Y", number[]>>;
   sma20: number;
   sma50: number;
@@ -103,15 +106,6 @@ type Fundamentals = {
   signalEligible?: boolean;
   isStale?: boolean;
 };
-
-function quoteBlocked(quote?: MarketQuote | SessionQuote) {
-  return !quote || quote.isStale !== false || quote.signalEligible === false ||
-    !Number.isFinite(Date.parse(quote.updated)) || Date.now() - Date.parse(quote.updated) > 600_000;
-}
-function fundamentalsBlocked(value?: Fundamentals) {
-  return !value || value.isStale || value.signalEligible === false ||
-    Date.now() - Date.parse(value.updated) > 3600_000;
-}
 
 type BacktestSummary = {
   trades: number;
@@ -405,7 +399,7 @@ function customStock(symbol: string, quote?: MarketQuote): Stock {
 
 function actionsFor(analysis: Analysis, blocked = false, reason = "Market data is stale or incomplete."): ActionPair {
   if (blocked) {
-    return { newAction: "SIGNAL PAUSED", ownAction: "CHECK BROKER / HOLD DECISION", tone: "warning", note: reason };
+    return { newAction: "SIGNAL PAUSED", ownAction: "CHECK BROKER / SIGNAL PAUSED", tone: "warning", note: reason };
   }
   if (analysis.score >= 76 && analysis.tone === "positive") {
     return { newAction: "BUY IN PARTS", ownAction: "HOLD", tone: "positive", note: "The strongest setup group. Start small; do not chase a gap." };
@@ -427,7 +421,7 @@ function holdingDecision(actions: ActionPair, currentPrice: number, stopPrice: n
     return {
       label: "CHECK BROKER / SIGNAL PAUSED",
       tone: "warning" as Tone,
-      reason: "The current quote or research data is stale or incomplete, so Stock Compass will not issue an automated exit instruction.",
+      reason: actions.note,
     };
   }
   if (currentPrice <= stopPrice) {
@@ -546,6 +540,7 @@ export default function Home() {
   const [riskPct, setRiskPct] = useState(0.5);
   const [fxRate, setFxRate] = useState(4.25);
   const [quotes, setQuotes] = useState<Record<string, MarketQuote>>({});
+  const [marketErrors, setMarketErrors] = useState<Record<string, string>>({});
   const [sessionQuotes, setSessionQuotes] = useState<Record<string, SessionQuote>>({});
   const [sessionFeedMessage, setSessionFeedMessage] = useState("Waiting for extended-hours feed");
   const [liveNews, setLiveNews] = useState<Record<string, NewsItem[]>>({});
@@ -588,8 +583,9 @@ export default function Home() {
   const selectedQuote = quotes[selectedSymbol];
   const selectedSession = sessionQuotes[selectedSymbol];
   const selectedFundamentals = fundamentals[selectedSymbol];
-  const selectedPrice = selectedSession?.price ?? selectedQuote?.price ?? selectedBase.price;
-  const selectedChangePct = selectedSession?.changePct ?? selectedQuote?.changePct ?? selectedBase.changePct;
+  const effectiveQuote = latestQuote<MarketQuote | SessionQuote>(selectedQuote, selectedSession);
+  const selectedPrice = effectiveQuote?.price ?? selectedBase.price;
+  const selectedChangePct = effectiveQuote?.changePct ?? selectedBase.changePct;
   const selected: Stock = {
     ...selectedBase,
     ...(selectedQuote ?? {}),
@@ -602,11 +598,11 @@ export default function Home() {
   const analysis = mode === "short"
     ? analysisQuote ? deriveShortAnalysis(selectedBase, analysisQuote) : selected.short
     : selectedFundamentals ? deriveLongAnalysis(selectedBase, selectedFundamentals) : selected.long;
-  const quoteIsStale = quoteBlocked(selectedSession ?? selectedQuote);
-  const signalBlocked = quoteIsStale || (mode === "long" && fundamentalsBlocked(selectedFundamentals));
-  const signalBlockedReason = quoteIsStale
-    ? (selectedSession?.freshnessReason ?? selectedQuote?.freshnessReason ?? "Signal paused because the latest market quote is stale, unavailable or still loading.")
-    : "Long-term signal paused until current fundamentals have sufficient coverage.";
+  const selectedQuoteStatus = quoteStatus(effectiveQuote);
+  const guard = signalStatus({ quote: effectiveQuote, history: selectedQuote, mode,
+    fundamentals: selectedFundamentals, fundamentalsError: fundamentalsErrors[selectedSymbol], marketError: marketErrors[selectedSymbol] });
+  const signalBlocked = guard.blocked;
+  const signalBlockedReason = guard.reason;
   const actions = actionsFor(analysis, signalBlocked, signalBlockedReason);
   const displayedNews = liveNews[selectedSymbol] ?? [];
   const newsSummary = summarizeNews(displayedNews);
@@ -646,32 +642,36 @@ export default function Home() {
   const quoteLow = selectedSession?.dayLow ?? selectedQuote?.low;
   const quotePreviousClose = selectedSession?.previousClose ?? selectedQuote?.previousClose;
   const quoteVolume = selectedSession?.volume ?? selectedQuote?.volume;
-  const quoteProvider = selectedSession?.provider ?? selectedQuote?.provider ?? "Built-in snapshot";
-  const quoteUpdated = selectedSession?.updated ?? selectedQuote?.updated;
+  const quoteProvider = effectiveQuote?.provider ?? "Built-in snapshot";
+  const quoteUpdated = effectiveQuote?.updated;
   const exitPlan = createExitPlan(selectedHolding?.averagePrice ?? selected.price, selected.price, selectedHolding?.stopPrice ?? suggestedStop, selected.sma20);
   const selectedBacktest = backtests[selectedSymbol];
 
   const rows = useMemo(() => trackedStocks.map((stock) => {
     const quote = quotes[stock.symbol];
     const session = sessionQuotes[stock.symbol];
+    const latest = latestQuote<MarketQuote | SessionQuote>(quote, session);
     const shown: Stock = quote
-      ? { ...stock, ...quote, price: session?.price ?? quote.price, changePct: session?.changePct ?? quote.changePct, rsi: quote.rsi ?? stock.rsi }
-      : session ? { ...stock, price: session.price, changePct: session.changePct } : stock;
+      ? { ...stock, ...quote, price: latest?.price ?? quote.price, changePct: latest?.changePct ?? quote.changePct, rsi: quote.rsi ?? stock.rsi }
+      : latest ? { ...stock, price: latest.price, changePct: latest.changePct } : stock;
     const analysisInput = quote ? { ...quote, price: shown.price, changePct: shown.changePct } : null;
     const rowFundamentals = fundamentals[stock.symbol];
     const rowAnalysis = mode === "short"
       ? analysisInput ? deriveShortAnalysis(stock, analysisInput) : shown.short
       : rowFundamentals ? deriveLongAnalysis(stock, rowFundamentals) : shown.long;
-    const blocked = quoteBlocked(session ?? quote) || (mode === "long" && fundamentalsBlocked(rowFundamentals));
+    const status = signalStatus({ quote: latest, history: quote, mode, fundamentals: rowFundamentals,
+      fundamentalsError: fundamentalsErrors[stock.symbol], marketError: marketErrors[stock.symbol] });
+    const blocked = status.blocked;
     return {
       stock,
       shown,
       analysis: rowAnalysis,
-      actions: actionsFor(rowAnalysis, blocked, blocked ? "Waiting for current market data or fundamentals." : ""),
+      actions: actionsFor(rowAnalysis, blocked, status.reason),
+      status,
       sector: sectorFor(stock),
       blocked,
     };
-  }).sort((a, b) => Number(a.blocked) - Number(b.blocked) || b.analysis.score - a.analysis.score), [fundamentals, mode, quotes, sessionQuotes, trackedStocks, secondsToRefresh]);
+  }).sort((a, b) => Number(a.blocked) - Number(b.blocked) || b.analysis.score - a.analysis.score), [fundamentals, fundamentalsErrors, marketErrors, mode, quotes, sessionQuotes, trackedStocks, secondsToRefresh]);
 
   const filteredRows = rows.filter((row) => {
     const textMatch = `${row.stock.symbol} ${row.stock.name}`.toLowerCase().includes(search.toLowerCase().trim());
@@ -724,7 +724,8 @@ export default function Home() {
     return fetch(`/api/market?symbols=${watchlistSymbols.join(",")}`)
       .then(async (response) => {
         if (!response.ok) return false;
-        const payload = await response.json() as { quotes?: MarketQuote[]; providerMode?: string };
+        const payload = await response.json() as { quotes?: MarketQuote[]; providerMode?: string; unavailableReasons?: Record<string, string> };
+        setMarketErrors(payload.unavailableReasons ?? {});
         const nextQuotes = Object.fromEntries((payload.quotes ?? []).map((quote) => [quote.symbol, quote]));
         if (!Object.keys(nextQuotes).length) return false;
         setQuotes((current) => ({ ...current, ...nextQuotes }));
@@ -1020,8 +1021,8 @@ export default function Home() {
   useEffect(() => {
     const timer = window.setTimeout(() => {
       const prices = Object.fromEntries(trackedStocks.flatMap((stock) => {
-        const quote = sessionQuotes[stock.symbol] ?? quotes[stock.symbol];
-        return quoteBlocked(quote) ? [] : [[stock.symbol, quote!.price]];
+        const quote = latestQuote<MarketQuote | SessionQuote>(quotes[stock.symbol], sessionQuotes[stock.symbol]);
+        return quoteStatus(quote).blocked ? [] : [[stock.symbol, quote!.price]];
       }));
       const evaluated = evaluatePriceAlerts(alerts, prices);
       if (!evaluated.triggered.length) return;
@@ -1104,9 +1105,9 @@ export default function Home() {
                 <tr key={row.stock.symbol} className={selectedSymbol === row.stock.symbol ? "selected" : ""} onClick={() => setSelectedSymbol(row.stock.symbol)}>
                   <td><button type="button" className="ticker-button" onClick={() => setSelectedSymbol(row.stock.symbol)}><strong>{row.stock.symbol}</strong><span>{row.stock.name}</span><small>{row.sector}</small></button></td>
                   <td><strong>${formatPrice(row.shown.price)}</strong><span className={row.shown.changePct >= 0 ? "change up" : "change down"}>{row.shown.changePct >= 0 ? "+" : ""}{row.shown.changePct.toFixed(2)}%</span></td>
-                  <td><span className={`action-chip tone-${row.actions.tone}`}>{row.actions.newAction}</span></td>
+                  <td><span className={`action-chip tone-${row.actions.tone}`}>{row.actions.newAction}</span>{row.blocked ? <small className="pause-reason" title={row.status.reason}>{row.status.label}</small> : null}</td>
                   <td><span className={`own-action tone-${row.actions.tone}`}>{row.actions.ownAction}</span></td>
-                  <td><div className="table-score"><span style={{ width: `${row.analysis.score}%` }} /><strong>{row.analysis.score}</strong></div></td>
+                  <td>{row.blocked ? <span className="paused-score" aria-label="Score unavailable while signal paused">—</span> : <div className="table-score"><span style={{ width: `${row.analysis.score}%` }} /><strong>{row.analysis.score}</strong></div>}</td>
                 </tr>
               ))}
             </tbody>
@@ -1186,7 +1187,7 @@ export default function Home() {
           </div>
           <div className="quote-details-heading">
             <div><span>Market data</span><strong>{selectedSession?.exchange ?? selectedQuote?.exchange ?? "US market"} · {selectedSession?.currency ?? selectedQuote?.currency ?? selected.currency}</strong></div>
-            <div className={`feed-badge ${quoteIsStale ? "stale" : ""}`}><i />{quoteProvider}<small>{quoteIsStale ? "Stale — decisions paused" : feedAge(quoteUpdated)}</small></div>
+            <div className={`feed-badge ${selectedQuoteStatus.blocked ? "stale" : ""}`}><i />{quoteProvider}<small>{selectedQuoteStatus.blocked ? selectedQuoteStatus.label : feedAge(quoteUpdated)}</small></div>
           </div>
           <div className="quote-details-grid">
             <div><span>Open</span><strong>{formatOptionalPrice(quoteOpen)}</strong></div>
@@ -1202,13 +1203,13 @@ export default function Home() {
 
         <aside className={`panel signal-panel tone-border-${actions.tone}`}>
           <div className="signal-topline"><span className="section-kicker">Automatic answer</span><span className="explain-pill">{signalBlocked ? "Data guard active" : `Rule-based · ${analysis.verdict}`}</span></div>
-          {signalBlocked ? <div className="data-guard"><strong>Signal paused</strong><p>{signalBlockedReason} Check the broker quote before making a decision.</p></div> : null}
+          {signalBlocked ? <div className="data-guard" role="status"><strong>Signal paused · {guard.label}</strong><p>{signalBlockedReason} Check the broker quote before making a decision.</p></div> : null}
           <div className="dual-actions">
             <div className={`action-answer tone-border-${actions.tone}`}><span>If you don&apos;t own it</span><strong className={`tone-${actions.tone}`}>{actions.newAction}</strong></div>
             <div className={`action-answer tone-border-${selectedHoldingDecision?.tone ?? actions.tone}`}><span>{selectedHolding ? "Your holding instruction" : "If you already own it"}</span><strong className={`tone-${selectedHoldingDecision?.tone ?? actions.tone}`}>{selectedHoldingDecision?.label ?? actions.ownAction}</strong></div>
           </div>
-          <div className="signal-score-row"><p>{actions.note}</p><ScoreRing score={analysis.score} tone={actions.tone} /></div>
-          <p className="signal-summary">{analysis.summary}</p>
+          <div className="signal-score-row"><p>{actions.note}</p>{!signalBlocked ? <ScoreRing score={analysis.score} tone={actions.tone} /> : null}</div>
+          <p className="signal-summary">{signalBlocked ? "No current setup score is issued while the required data is incomplete. Select the stock and use Refresh Now to retry." : analysis.summary}</p>
           <div className="decision-box positive-edge"><span>What confirms a buy</span><strong>{analysis.trigger}</strong></div>
           <div className="decision-box negative-edge"><span>What cancels the setup</span><strong>{analysis.invalidation}</strong></div>
           <p className="signal-note">The score measures rule agreement, not probability. The action updates with price, fundamentals, your cost basis and stop. Confirm the latest broker quote before acting.</p>
@@ -1307,7 +1308,7 @@ export default function Home() {
 
       <section className="dashboard-grid lower-grid">
         <article className="panel checklist-panel">
-          <div className="section-heading"><div><span className="section-kicker">Why this answer?</span><h2>Evidence checklist</h2></div><span className="score-text">{analysis.score}/100 setup score</span></div>
+          <div className="section-heading"><div><span className="section-kicker">Why this answer?</span><h2>Evidence checklist</h2></div><span className="score-text">{signalBlocked ? "Not scored" : `${analysis.score}/100 setup score`}</span></div>
           <div className="check-grid">
             {analysis.checks.map((check) => <div className="check-item" key={check.label}><span className={`status-dot tone-${check.tone}`} /><div><span>{check.label}</span><strong>{check.value}</strong><p>{check.detail}</p></div></div>)}
           </div>
@@ -1376,7 +1377,7 @@ export default function Home() {
 
       <section className="dashboard-grid lower-grid tools-grid">
         <article className="panel exit-panel">
-          <div className="section-heading"><div><span className="section-kicker">Plan the exit before entry</span><h2>Advanced exit planner</h2></div><span className={`action-chip tone-${exitPlan.action.includes("STOP") ? "negative" : exitPlan.action.includes("PROFIT") || exitPlan.action.includes("SELL PART") ? "positive" : "neutral"}`}>{exitPlan.action}</span></div>
+          <div className="section-heading"><div><span className="section-kicker">Plan the exit before entry</span><h2>Advanced exit planner</h2></div><span className={`action-chip tone-${exitPlan.action.includes("STOP") ? "negative" : exitPlan.action.includes("PROFIT") || exitPlan.action.includes("SELL PART") ? "positive" : "neutral"}`}>{signalBlocked ? "PLAN ONLY" : exitPlan.action}</span></div>
           <p className="panel-intro">Calculated from {selectedHolding ? `your $${formatPrice(selectedHolding.averagePrice)} average cost` : "the current reference price"}, technical support and a two-to-one reward target.</p>
           <div className="exit-levels">
             <div className="exit-stop"><span>Stop / invalidation</span><strong>${formatPrice(exitPlan.stop)}</strong><small>Maximum planned loss level</small></div>
@@ -1384,7 +1385,7 @@ export default function Home() {
             <div className="exit-target"><span>Target 2 · 2R</span><strong>${formatPrice(exitPlan.target2)}</strong><small>Primary reward objective</small></div>
             <div><span>Trailing stop</span><strong>${formatPrice(exitPlan.trailingStop)}</strong><small>Raises as the trade progresses</small></div>
           </div>
-          <div className="exit-guidance"><strong>{exitPlan.action}</strong><p>{exitPlan.reason}</p><span>Planned risk per share: ${formatPrice(exitPlan.riskPerShare)}</span></div>
+          <div className="exit-guidance"><strong>{signalBlocked ? "No live exit instruction" : exitPlan.action}</strong><p>{signalBlocked ? signalBlockedReason : exitPlan.reason}</p><span>Planned risk per share: ${formatPrice(exitPlan.riskPerShare)}</span></div>
         </article>
 
         <aside className="panel alerts-panel">

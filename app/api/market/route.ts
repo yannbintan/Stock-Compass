@@ -374,6 +374,8 @@ async function loadYahoo(symbol: string, intraday: boolean) {
     week52High: Math.max(...annual.map((bar) => bar.high)),
     week52Low: Math.min(...annual.map((bar) => bar.low)),
     history: annual.slice(-24).map((bar) => bar.close),
+    historyBars: annual.length,
+    historyUpdated: new Date(latest.timestamp * 1000).toISOString(),
     historyByPeriod: {
       "1M": annual.slice(-22).map((bar) => bar.close),
       "3M": sampled(annual.slice(-66).map((bar) => bar.close), 80),
@@ -435,6 +437,8 @@ async function loadStooq(symbol: string) {
     week52High: Math.max(...annual.map((bar) => bar.high)),
     week52Low: Math.min(...annual.map((bar) => bar.low)),
     history: annual.slice(-24).map((bar) => bar.close),
+    historyBars: annual.length,
+    historyUpdated: updated,
     historyByPeriod: {
       "1M": annual.slice(-22).map((bar) => bar.close),
       "3M": sampled(annual.slice(-66).map((bar) => bar.close), 80),
