@@ -59,18 +59,17 @@ export function quoteStatus(quote?: QuoteInput, now = Date.now()): Status {
   return { blocked: false, label: "Current quote", reason: "The latest quote is current for this feed's supported session." };
 }
 
-export function signalStatus(input: {
+type AnalysisInput = {
   quote?: QuoteInput;
   history?: HistoryInput;
   mode: "short" | "long";
   fundamentals?: ResearchInput;
   fundamentalsError?: string;
   marketError?: string;
-}, now = Date.now()): Status {
-  const { quote, history, mode, fundamentals } = input;
-  const price = quoteStatus(quote, now);
-  if (price.blocked) return !quote && input.marketError
-    ? paused("Quote unavailable", input.marketError) : price;
+};
+
+function analysisDataStatus(input: AnalysisInput, now: number): Status {
+  const { history, mode, fundamentals } = input;
   if (mode === "short") {
     if (!history || !Number.isFinite(history.historyBars)) {
       return paused("History not loaded", "A live price alone is not enough. The daily history needed for trend, RSI and support must load before a short-term signal can resume.");
@@ -96,4 +95,32 @@ export function signalStatus(input: {
     }
   }
   return { blocked: false, label: "Signal ready", reason: "The required quote and analysis data passed their checks." };
+}
+
+export function signalStatus(input: AnalysisInput, now = Date.now()): Status {
+  const price = quoteStatus(input.quote, now);
+  if (price.blocked) return !input.quote && input.marketError
+    ? paused("Quote unavailable", input.marketError) : price;
+  return analysisDataStatus(input, now);
+}
+
+/** A dated research score can use the latest completed session without enabling live actions. */
+export function scoreStatus(input: AnalysisInput, now = Date.now()): Status & {
+  asOf: string | null;
+  isReference: boolean;
+} {
+  const price = quoteStatus(input.quote, now);
+  const reference = price.label === "Outside feed hours" || price.label === "Daily prices only";
+  if (price.blocked && !reference) return { ...price, asOf: null, isReference: false };
+  const data = analysisDataStatus(input, now);
+  if (data.blocked) return { ...data, asOf: null, isReference: false };
+  return {
+    blocked: false,
+    label: reference ? "Reference score" : "Current score",
+    reason: reference
+      ? "Based on the latest available session price and complete analysis data. Live Buy/Sell instructions remain paused."
+      : "Based on the latest usable quote and complete analysis data.",
+    asOf: input.quote!.updated,
+    isReference: reference,
+  };
 }

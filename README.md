@@ -145,6 +145,7 @@ Other commands:
 
 ## Understand the results
 
+- **Reference scores remain visible outside trading hours** when the latest completed session and the required analysis data are usable. Each score shows its price timestamp in Malaysia time. Live Buy/Sell instructions remain paused until a current supported-session quote arrives. Missing, invalid or outdated inputs still hide the score.
 - **74/100 is a rule-based score, not a 74% chance of profit.** The live setup rules and historical entry strategy are related but not identical.
 - Long-term scores still start from predefined assessments for starter symbols and adjust using available metrics. They are not a fully independent valuation model.
 - The backtest's later 30% period is a chronological reporting subset, not proof of out-of-sample predictive accuracy. Drawdown is measured at trade closures. Daily-bar execution, overnight gaps, dividends and other modelling limits are described in [Methodology](docs/METHODOLOGY.md).

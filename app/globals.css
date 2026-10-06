@@ -138,6 +138,13 @@ h2 { margin-bottom: 0; font-size: 18px; letter-spacing: -.02em; }
 .table-score strong { min-width: 20px; color: var(--muted-strong); font-size: 9px; }
 .pause-reason { display: block; max-width: 15rem; margin-top: .35rem; color: var(--muted-strong); font-size: .875rem; line-height: 1.35; white-space: normal; }
 .paused-score { color: var(--muted); font-size: 1rem; }
+.score-cell { min-width: 130px; }
+.score-cell .table-score strong { font-size: 14px; color: var(--ink); }
+.score-caption, .score-timestamp { display: block; margin-top: 5px; max-width: 170px; white-space: normal; font-size: 10px; line-height: 1.4; color: var(--muted-strong); }
+.score-timestamp { color: var(--muted); }
+.score-context { display: grid; gap: 4px; padding: 11px 12px; margin-bottom: 12px; border: 1px solid var(--border); border-radius: 9px; background: #101c27; }
+.score-context strong { color: var(--ink); font-size: 12px; }
+.score-context span { color: var(--muted-strong); font-size: 10px; line-height: 1.5; }
 .empty-state { padding: 24px; color: var(--muted); font-size: 10px; text-align: center; }
 
 .dashboard-grid { display: grid; grid-template-columns: minmax(0, 1.75fr) minmax(310px, .85fr); gap: 18px; margin-bottom: 18px; }

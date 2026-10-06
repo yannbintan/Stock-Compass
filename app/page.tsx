@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { stocks, type Analysis, type Mode, type NewsItem, type Stock, type Tone } from "./data";
 import { calculatePositions, createExitPlan, type JournalTransaction, type TransactionType } from "./lib/portfolio";
 import { evaluatePriceAlerts, type PriceAlert } from "./lib/alerts";
-import { latestQuote, quoteStatus, signalStatus } from "./lib/signal-status";
+import { latestQuote, quoteStatus, scoreStatus, signalStatus } from "./lib/signal-status";
 
 type MarketQuote = {
   symbol: string;
@@ -601,6 +601,8 @@ export default function Home() {
   const selectedQuoteStatus = quoteStatus(effectiveQuote);
   const guard = signalStatus({ quote: effectiveQuote, history: selectedQuote, mode,
     fundamentals: selectedFundamentals, fundamentalsError: fundamentalsErrors[selectedSymbol], marketError: marketErrors[selectedSymbol] });
+  const score = scoreStatus({ quote: effectiveQuote, history: selectedQuote, mode,
+    fundamentals: selectedFundamentals, fundamentalsError: fundamentalsErrors[selectedSymbol], marketError: marketErrors[selectedSymbol] });
   const signalBlocked = guard.blocked;
   const signalBlockedReason = guard.reason;
   const actions = actionsFor(analysis, signalBlocked, signalBlockedReason);
@@ -661,6 +663,8 @@ export default function Home() {
       : rowFundamentals ? deriveLongAnalysis(stock, rowFundamentals) : shown.long;
     const status = signalStatus({ quote: latest, history: quote, mode, fundamentals: rowFundamentals,
       fundamentalsError: fundamentalsErrors[stock.symbol], marketError: marketErrors[stock.symbol] });
+    const score = scoreStatus({ quote: latest, history: quote, mode, fundamentals: rowFundamentals,
+      fundamentalsError: fundamentalsErrors[stock.symbol], marketError: marketErrors[stock.symbol] });
     const blocked = status.blocked;
     return {
       stock,
@@ -668,10 +672,12 @@ export default function Home() {
       analysis: rowAnalysis,
       actions: actionsFor(rowAnalysis, blocked, status.reason),
       status,
+      score,
       sector: sectorFor(stock),
       blocked,
     };
-  }).sort((a, b) => Number(a.blocked) - Number(b.blocked) || b.analysis.score - a.analysis.score), [fundamentals, fundamentalsErrors, marketErrors, mode, quotes, sessionQuotes, trackedStocks, secondsToRefresh]);
+  }).sort((a, b) => Number(a.score.blocked) - Number(b.score.blocked) ||
+    (a.score.blocked ? a.stock.symbol.localeCompare(b.stock.symbol) : b.analysis.score - a.analysis.score)), [fundamentals, fundamentalsErrors, marketErrors, mode, quotes, sessionQuotes, trackedStocks, secondsToRefresh]);
 
   const filteredRows = rows.filter((row) => {
     const textMatch = `${row.stock.symbol} ${row.stock.name}`.toLowerCase().includes(search.toLowerCase().trim());
@@ -1067,7 +1073,7 @@ export default function Home() {
 
       <section className="command-center">
         <div className="section-heading action-heading">
-          <div><span className="section-kicker">Automatic answers</span><h2>Action board</h2><p>Buy, wait or protect—ranked from the same rules used in each stock view.</p></div>
+          <div><span className="section-kicker">Scores & live actions</span><h2>Action board</h2><p>Scores remain visible outside trading hours when the latest session data is complete. Live actions resume with a current quote.</p></div>
           <span className="mode-label">{modeLabel}</span>
         </div>
         <div className="market-pulse-grid">
@@ -1099,7 +1105,7 @@ export default function Home() {
 
         <div className="market-table-wrap">
           <table className="market-table">
-            <thead><tr><th>Stock</th><th>Market</th><th>If you don&apos;t own it</th><th>If you already own it</th><th>Score</th></tr></thead>
+            <thead><tr><th>Stock</th><th>Market</th><th>If you don&apos;t own it</th><th>If you already own it</th><th>Score / 100</th></tr></thead>
             <tbody>
               {filteredRows.map((row) => (
                 <tr key={row.stock.symbol} className={selectedSymbol === row.stock.symbol ? "selected" : ""} onClick={() => setSelectedSymbol(row.stock.symbol)}>
@@ -1107,7 +1113,7 @@ export default function Home() {
                   <td><strong>${formatPrice(row.shown.price)}</strong><span className={row.shown.changePct >= 0 ? "change up" : "change down"}>{row.shown.changePct >= 0 ? "+" : ""}{row.shown.changePct.toFixed(2)}%</span></td>
                   <td><span className={`action-chip tone-${row.actions.tone}`}>{row.actions.newAction}</span>{row.blocked ? <small className="pause-reason" title={row.status.reason}>{row.status.label}</small> : null}</td>
                   <td><span className={`own-action tone-${row.actions.tone}`}>{row.actions.ownAction}</span></td>
-                  <td>{row.blocked ? <span className="paused-score" aria-label="Score unavailable while signal paused">—</span> : <div className="table-score"><span style={{ width: `${row.analysis.score}%` }} /><strong>{row.analysis.score}</strong></div>}</td>
+                  <td>{row.score.blocked ? <div><span className="paused-score" aria-label={row.score.reason}>—</span><small className="score-caption">{row.score.label}</small></div> : <div className="score-cell" title={`${row.score.reason} Price as of ${formatMarketTime(row.score.asOf)} MYT`}><div className="table-score"><span style={{ width: `${row.analysis.score}%` }} /><strong>{row.analysis.score}</strong></div><small className="score-caption">{row.score.label}</small><time className="score-timestamp" dateTime={row.score.asOf!}>{formatMarketTime(row.score.asOf)} MYT</time></div>}</td>
                 </tr>
               ))}
             </tbody>
@@ -1202,17 +1208,18 @@ export default function Home() {
         </article>
 
         <aside className={`panel signal-panel tone-border-${actions.tone}`}>
-          <div className="signal-topline"><span className="section-kicker">Automatic answer</span><span className="explain-pill">{signalBlocked ? "Data guard active" : `Rule-based · ${analysis.verdict}`}</span></div>
+          <div className="signal-topline"><span className="section-kicker">Setup score & actions</span><span className="explain-pill">{score.blocked ? "Score unavailable" : score.label}</span></div>
           {signalBlocked ? <div className="data-guard" role="status"><strong>Signal paused · {guard.label}</strong><p>{signalBlockedReason} Check the broker quote before making a decision.</p></div> : null}
           <div className="dual-actions">
             <div className={`action-answer tone-border-${actions.tone}`}><span>If you don&apos;t own it</span><strong className={`tone-${actions.tone}`}>{actions.newAction}</strong></div>
             <div className={`action-answer tone-border-${selectedHoldingDecision?.tone ?? actions.tone}`}><span>{selectedHolding ? "Your holding instruction" : "If you already own it"}</span><strong className={`tone-${selectedHoldingDecision?.tone ?? actions.tone}`}>{selectedHoldingDecision?.label ?? actions.ownAction}</strong></div>
           </div>
-          <div className="signal-score-row"><p>{actions.note}</p>{!signalBlocked ? <ScoreRing score={analysis.score} tone={actions.tone} /> : null}</div>
-          <p className="signal-summary">{signalBlocked ? "No current setup score is issued while the required data is incomplete. Select the stock and use Refresh Now to retry." : analysis.summary}</p>
+          <div className="signal-score-row"><p>{score.reason}</p>{!score.blocked ? <ScoreRing score={analysis.score} tone={analysis.tone} /> : null}</div>
+          {!score.blocked ? <div className="score-context"><strong>{score.label} · {analysis.score}/100</strong><span>Price as of {formatMarketTime(score.asOf)} MYT</span>{mode === "short" ? <span>Daily history through {formatMarketTime(selectedQuote?.historyUpdated)} MYT</span> : <span>Fundamentals refreshed {formatMarketTime(selectedFundamentals?.updated)} MYT{selectedFundamentals?.asOfDate ? ` · Statements through ${selectedFundamentals.asOfDate}` : ""}</span>}</div> : null}
+          <p className="signal-summary">{score.blocked ? "A score will appear when the required data is available. Select the stock and use Refresh Now to retry." : analysis.summary}</p>
           <div className="decision-box positive-edge"><span>What confirms a buy</span><strong>{analysis.trigger}</strong></div>
           <div className="decision-box negative-edge"><span>What cancels the setup</span><strong>{analysis.invalidation}</strong></div>
-          <p className="signal-note">The score measures rule agreement, not probability. The action updates with price, fundamentals, your cost basis and stop. Confirm the latest broker quote before acting.</p>
+          <p className="signal-note">The score is a setup assessment out of 100, not a probability of profit.{mode === "long" ? " Long-term scoring combines the saved company assessment with the loaded fundamentals." : " Short-term scoring uses trend, RSI and distance from support."} A reference score uses the dated data shown above. Confirm the latest broker quote before acting.</p>
         </aside>
       </section>
 
@@ -1308,7 +1315,7 @@ export default function Home() {
 
       <section className="dashboard-grid lower-grid">
         <article className="panel checklist-panel">
-          <div className="section-heading"><div><span className="section-kicker">Why this answer?</span><h2>Evidence checklist</h2></div><span className="score-text">{signalBlocked ? "Not scored" : `${analysis.score}/100 setup score`}</span></div>
+          <div className="section-heading"><div><span className="section-kicker">Why this score?</span><h2>Evidence checklist</h2></div><span className="score-text">{score.blocked ? "Not scored" : `${analysis.score}/100 · ${score.label}`}</span></div>
           <div className="check-grid">
             {analysis.checks.map((check) => <div className="check-item" key={check.label}><span className={`status-dot tone-${check.tone}`} /><div><span>{check.label}</span><strong>{check.value}</strong><p>{check.detail}</p></div></div>)}
           </div>

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { latestQuote, quoteStatus, signalStatus } from "../app/lib/signal-status.ts";
+import { latestQuote, quoteStatus, scoreStatus, signalStatus } from "../app/lib/signal-status.ts";
 
 const now = Date.parse("2026-09-18T15:00:00Z");
 const quote = { price: 100, updated: "2026-09-18T14:59:00Z", isStale: false, signalEligible: true, coverage: "regular" };
@@ -44,5 +44,49 @@ test("future, stale, failed and zero-price quotes stay blocked", () => {
   for (const bad of [ { ...quote, price: 0 }, { ...quote, isStale: true },
     { ...quote, updated: "2026-09-18T14:40:00Z" }, { ...quote, updated: "2026-09-19T15:00:00Z" } ]) {
     assert.equal(quoteStatus(bad, now).blocked, true);
+  }
+});
+
+test("latest completed-session scores stay visible while live actions remain paused", () => {
+  const overnight = Date.parse("2026-09-19T02:00:00Z");
+  const closed = { ...quote, updated: "2026-09-18T20:00:01Z", signalEligible: false };
+  const input = { quote: closed, history, mode: "short" };
+  const score = scoreStatus(input, overnight);
+  assert.equal(score.blocked, false);
+  assert.equal(score.isReference, true);
+  assert.equal(score.asOf, closed.updated);
+  assert.equal(score.label, "Reference score");
+  assert.equal(signalStatus(input, overnight).blocked, true);
+  assert.equal(scoreStatus(input, Date.parse("2026-09-19T18:00:00Z")).blocked, false);
+});
+
+test("daily-only data supports dated research but never a live action", () => {
+  const daily = { ...quote, updated: "2026-09-17T20:00:00Z", coverage: "daily", signalEligible: false };
+  const input = { quote: daily, history: { ...history, historyUpdated: "2026-09-17T13:30:00Z" }, mode: "short" };
+  assert.equal(scoreStatus(input, now).blocked, false);
+  assert.equal(scoreStatus(input, now).isReference, true);
+  assert.equal(signalStatus(input, now).blocked, true);
+});
+
+test("reference scores still require complete and current analysis inputs", () => {
+  const overnight = Date.parse("2026-09-19T02:00:00Z");
+  const closed = { ...quote, updated: "2026-09-18T20:00:01Z", signalEligible: false };
+  for (const missing of [undefined, { ...history, historyBars: 49 }, { ...history, rsi: null },
+    { ...history, historyUpdated: "2026-09-01T13:30:00Z" }]) {
+    assert.equal(scoreStatus({ quote: closed, history: missing, mode: "short" }, overnight).blocked, true);
+  }
+  assert.equal(scoreStatus({ quote: closed, mode: "long" }, overnight).blocked, true);
+  assert.equal(scoreStatus({ quote: closed, mode: "long", fundamentals: { updated: new Date(overnight).toISOString(), signalEligible: false } }, overnight).blocked, true);
+  assert.equal(scoreStatus({ quote: closed, mode: "long", fundamentals: { updated: new Date(overnight).toISOString(), signalEligible: true } }, overnight).blocked, false);
+});
+
+test("fresh scores retain live behavior and outdated quotes never expose a score", () => {
+  const input = { quote, history, mode: "short" };
+  assert.equal(scoreStatus(input, now).label, "Current score");
+  assert.equal(scoreStatus(input, now).isReference, false);
+  assert.equal(signalStatus(input, now).blocked, false);
+  for (const failed of [{ ...quote, isStale: true }, { ...quote, updated: "2026-09-18T14:00:00Z" },
+    { ...quote, price: 0 }, { ...quote, signalEligible: false }]) {
+    assert.equal(scoreStatus({ ...input, quote: failed }, now).blocked, true);
   }
 });
